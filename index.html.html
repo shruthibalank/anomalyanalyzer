@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log Similarity Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg: #f5ede0;
+    --surface: #f0e6d0;
+    --border: #d3beaa;
+    --accent-a: #3f2b20;
+    --accent-b: #d07c94;
+    --accent-c: #9d5b43;
+    --accent-err: #b03a2e;
+    --text: #16100d;
+    --muted: #7a6457;
+    --card: #efe4d1;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+
+  .logo {
+    width: 40px; height: 40px;
+    background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 800; color: #0a0c10;
+    font-family: 'Syne', sans-serif;
+  }
+
+  h1 { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  h1 span { color: var(--accent-a); }
+  .subtitle { font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+
+  .upload-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+  .upload-zone {
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    background: var(--surface);
+  }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent-a); background: rgba(208,124,148,0.12); }
+  .upload-zone.loaded { border-color: var(--accent-a); border-style: solid; }
+  .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  .upload-label { font-size: 11px; color: var(--accent-a); letter-spacing: 1.5px; text-transform: uppercase; font-weight: 600; margin-bottom: 8px; display: block; }
+  .upload-icon { font-size: 28px; margin-bottom: 8px; display: block; }
+  .upload-name { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .analyze-btn {
+    display: block; width: 100%; padding: 14px;
+    background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+    border: none; border-radius: 8px;
+    font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; color: #fff;
+    cursor: pointer; margin-bottom: 32px; transition: opacity 0.2s, transform 0.1s;
+  }
+  .analyze-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  .analyze-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+  #results { display: none; }
+
+  .section-title {
+    font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 16px;
+  }
+
+  /* Overall score */
+  .overall-score {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; display: flex; align-items: center; gap: 24px; margin-bottom: 28px;
+  }
+  .big-score {
+    font-family: 'Syne', sans-serif; font-size: 56px; font-weight: 800; line-height: 1;
+    background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    min-width: 120px;
+  }
+  .score-meta { flex: 1; }
+  .score-meta h2 { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+  .score-meta p { font-size: 11px; color: var(--muted); line-height: 1.6; }
+
+  /* Weight pills */
+  .weight-legend {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px;
+  }
+  .weight-pill {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+    padding: 4px 10px; font-size: 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .weight-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .weight-pct { color: var(--accent-a); font-weight: 700; }
+
+  /* Score cards */
+  .score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+  .score-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; position: relative; overflow: hidden;
+  }
+  .score-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
+  .score-card.good::before { background: var(--accent-a); }
+  .score-card.warn::before { background: var(--accent-c); }
+  .score-card.bad::before  { background: var(--accent-err); }
+  .sc-label { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .sc-value { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; color: var(--text); margin-bottom: 2px; }
+  .sc-weight { font-size: 9px; color: var(--muted); margin-bottom: 4px; }
+  .sc-verdict { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; }
+  .sc-verdict.good { color: var(--accent-a); }
+  .sc-verdict.warn { color: var(--accent-c); }
+  .sc-verdict.bad  { color: var(--accent-err); }
+
+  /* Chart grid */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
+  .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+  .chart-card-title { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+  .chart-card-weight { font-size: 9px; color: var(--accent-a); margin-bottom: 12px; }
+  canvas { max-height: 200px; }
+
+  /* Table */
+  .metric-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 28px; }
+  .metric-table th { text-align: left; padding: 8px 12px; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600; }
+  .metric-table td { padding: 10px 12px; border-bottom: 1px solid rgba(30,35,48,0.6); }
+  .metric-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 9px; letter-spacing: 1px; font-weight: 600; text-transform: uppercase; }
+  .badge.good { background: rgba(0,245,196,0.12); color: var(--accent-a); }
+  .badge.warn { background: rgba(245,166,35,0.12); color: var(--accent-c); }
+  .badge.bad  { background: rgba(245,66,66,0.12); color: var(--accent-err); }
+
+  .progress-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 4px; width: 100px; }
+  .progress-fill { height: 100%; border-radius: 2px; }
+
+  .preview-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+  .preview-label { font-size: 9px; letter-spacing: 1.5px; color: var(--accent-b); text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
+  .log-preview { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; font-size: 10px; color: var(--muted); max-height: 140px; overflow-y: auto; line-height: 1.7; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">LS</div>
+  <div>
+    <h1>Log <span>Similarity</span> Analyzer</h1>
+    <div class="subtitle">Emulation vs Simulation · 8-Metric Weighted Analysis</div>
+  </div>
+</header>
+
+<div class="upload-row">
+  <div class="upload-zone" id="zone-a">
+    <input type="file" id="file-a" accept=".log,.txt,.csv,.json">
+    <span class="upload-label">Emulation Log</span>
+    <span class="upload-icon">📂</span>
+    <div class="upload-name" id="name-a">Drop or click to upload</div>
+  </div>
+  <div class="upload-zone" id="zone-b">
+    <input type="file" id="file-b" accept=".log,.txt,.csv,.json">
+    <span class="upload-label">Simulation Log</span>
+    <span class="upload-icon">📂</span>
+    <div class="upload-name" id="name-b">Drop or click to upload</div>
+  </div>
+</div>
+
+<button class="analyze-btn" id="analyze-btn" disabled>⚙ Run Analysis</button>
+
+<div id="results">
+
+  <!-- Weight Legend -->
+  <div class="section-title">Metric Weights</div>
+  <div class="weight-legend" id="weight-legend"></div>
+
+  <!-- Overall -->
+  <div class="section-title">Composite Score</div>
+  <div class="overall-score">
+    <div class="big-score" id="overall-pct">—</div>
+    <div class="score-meta">
+      <h2 id="overall-label">Overall Similarity</h2>
+      <p id="overall-desc">Weighted composite of all 8 metrics using domain-calibrated weights. Values ≥ 75% indicate strong behavioral similarity.</p>
+    </div>
+  </div>
+
+  <!-- Cards -->
+  <div class="section-title">Per-Metric Scores</div>
+  <div class="score-grid" id="score-grid"></div>
+
+  <!-- Charts -->
+  <!--
+  <div class="section-title">Distributions & Visualizations</div>
+  <div class="chart-grid">
+    <div class="chart-card">
+      <div class="chart-card-title">Inter-Event Δt Distribution</div>
+      <div class="chart-card-weight">Weight: 15% · Temporal realism</div>
+      <canvas id="chart-dt"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-title">Latency Percentiles (P50 / P95 / P99)</div>
+      <div class="chart-card-weight">Weight: 15% · Performance realism</div>
+      <canvas id="chart-lat"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-title">Event Frequency Over Time</div>
+      <div class="chart-card-weight">Weight: 10% · Activity scaling</div>
+      <canvas id="chart-freq"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-title">State Transition Probabilities</div>
+      <div class="chart-card-weight">Weight: 15% · Behavioral dynamics</div>
+      <canvas id="chart-state"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-title">KL Divergence per Distribution</div>
+      <div class="chart-card-weight">Weight: 5% · Distribution sanity check</div>
+      <canvas id="chart-kl"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-title">Cross-Parameter Correlations</div>
+      <div class="chart-card-weight">Weight: 10% · System relationships</div>
+      <canvas id="chart-corr"></canvas>
+    </div>
+  </div>
+  -->
+
+  <!-- Table -->
+  <div class="section-title">Detailed Metric Breakdown</div>
+  <table class="metric-table" id="metric-table">
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Weight</th>
+        <th>Emulation</th>
+        <th>Simulation</th>
+        <th>Raw Score</th>
+        <th>Weighted Contribution</th>
+        <th>Status</th>
+        <th>Bar</th>
+      </tr>
+    </thead>
+    <tbody id="metric-tbody"></tbody>
+    <tfoot id="metric-tfoot"></tfoot>
+  </table>
+
+  <!-- Log Previews -->
+  <div class="section-title">Log Previews</div>
+  <div class="preview-row">
+    <div>
+      <div class="preview-label">Emulation Log</div>
+      <div class="log-preview" id="preview-a"></div>
+    </div>
+    <div>
+      <div class="preview-label">Simulation Log</div>
+      <div class="log-preview" id="preview-b"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Weights (updated) ──────────────────────────────────────────────────────
+const WEIGHTS = {
+  seq:   0.20,  // Event sequence similarity    — Core structural correctness
+  dt:    0.15,  // Inter-event time distribution — Temporal realism
+  lat:   0.15,  // Latency distribution          — Performance realism
+  freq:  0.10,  // Event frequency               — Activity scaling
+  state: 0.15,  // State transition probabilities— Behavioral dynamics
+  err:   0.10,  // Error rate                    — Real-world noise
+  corr:  0.10,  // Cross-parameter correlation   — System relationships
+  kl:    0.05,  // KL Divergence                 — Distribution sanity check
+};
+
+const METRIC_META = [
+  { key:'seq',   label:'Event Sequence Similarity',      why:'Core structural correctness' },
+  { key:'dt',    label:'Inter-Event Δt Distribution',    why:'Temporal realism' },
+  { key:'lat',   label:'Latency Distribution',           why:'Performance realism' },
+  { key:'freq',  label:'Event Frequency',                why:'Activity scaling' },
+  { key:'state', label:'State Transition Probabilities', why:'Behavioral dynamics' },
+  { key:'err',   label:'Error Rate',                     why:'Real-world noise' },
+  { key:'corr',  label:'Cross-Parameter Correlation',    why:'System relationships' },
+  { key:'kl',    label:'KL Divergence',                  why:'Distribution sanity check' },
+];
+
+const PILL_COLORS = ['#00f5c4','#7b5cf5','#f5a623','#4af0ff','#c97bff','#f5a623','#78e08f','#f54242'];
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+let charts = {};
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+const COLORS = {
+  emu: 'rgba(0,245,196,0.85)', sim: 'rgba(123,92,245,0.85)',
+  emuFill: 'rgba(0,245,196,0.12)', simFill: 'rgba(123,92,245,0.12)',
+};
+
+const chartDefaults = {
+  responsive: true, maintainAspectRatio: true,
+  plugins: { legend: { labels: { color: '#5a6278', font: { family: 'JetBrains Mono', size: 10 } } } },
+  scales: {
+    x: { ticks: { color: '#5a6278', font: { size: 9, family: 'JetBrains Mono' } }, grid: { color: 'rgba(30,35,48,0.6)' } },
+    y: { ticks: { color: '#5a6278', font: { size: 9, family: 'JetBrains Mono' } }, grid: { color: 'rgba(30,35,48,0.6)' } }
+  }
+};
+
+// ── Log Parsing ────────────────────────────────────────────────────────────
+function parseLog(text) {
+  const lines = text.split('\n').filter(l => l.trim());
+  const events = [];
+  const patterns = [
+    /(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)/,
+    /(\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)/,
+    /(\d+\.\d+)/,
+    /\[(\d+)\]/,
+  ];
+  const levelRe = /\b(ERROR|WARN|INFO|DEBUG|FATAL|CRITICAL|OK|SUCCESS|FAIL)\b/i;
+  const latRe   = /(?:lat(?:ency)?|delay|time|duration|ms|elapsed)[=:\s]+(\d+(?:\.\d+)?)/i;
+  const stateRe = /(?:state|status|phase|mode)[=:\s]+(\w+)/i;
+
+  lines.forEach((line, idx) => {
+    let ts = null;
+    for (const p of patterns) { const m = line.match(p); if (m) { ts = parseTimestamp(m[1]); break; } }
+    if (!ts) ts = idx * 100;
+    const level     = (line.match(levelRe) || ['','INFO'])[1].toUpperCase();
+    const latMatch  = line.match(latRe);
+    const latency   = latMatch ? parseFloat(latMatch[1]) : null;
+    const stateMatch= line.match(stateRe);
+    const state     = stateMatch ? stateMatch[1].toLowerCase() : 'unknown';
+    events.push({ ts, level, latency, state, raw: line });
+  });
+  events.sort((a,b) => a.ts - b.ts);
+  return events;
+}
+
+function parseTimestamp(s) {
+  if (/^\d+\.\d+$/.test(s)) return parseFloat(s)*1000;
+  if (/^\d+$/.test(s)) return parseInt(s);
+  const d = new Date(s.replace(' ','T'));
+  if (!isNaN(d)) return d.getTime();
+  const parts = s.split(':');
+  if (parts.length===3) return (+parts[0]*3600 + +parts[1]*60 + parseFloat(parts[2]))*1000;
+  return 0;
+}
+
+// ── Metric Calculations ────────────────────────────────────────────────────
+function editDistance(a,b) {
+  const cap=Math.min(a.length,b.length,200), sa=a.slice(0,cap), sb=b.slice(0,cap);
+  const m=sa.length, n=sb.length;
+  if (!m) return n; if (!n) return m;
+  const dp=Array.from({length:m+1},(_,i)=>Array.from({length:n+1},(_,j)=>i||j));
+  for(let i=1;i<=m;i++) for(let j=1;j<=n;j++)
+    dp[i][j]=sa[i-1]===sb[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+  return dp[m][n];
+}
+
+function interEventDeltas(ev) {
+  const d=[]; for(let i=1;i<ev.length;i++) d.push(Math.abs(ev[i].ts-ev[i-1].ts)); return d;
+}
+
+function percentile(arr,p) {
+  if(!arr.length) return 0;
+  const s=[...arr].sort((a,b)=>a-b);
+  return s[Math.max(0,Math.ceil(p/100*s.length)-1)];
+}
+
+function histogram(vals,bins=20) {
+  if(!vals.length) return {counts:Array(bins).fill(0),edges:Array(bins+1).fill(0)};
+  const mn=Math.min(...vals), mx=Math.max(...vals), step=(mx-mn)/bins||1;
+  const counts=Array(bins).fill(0);
+  vals.forEach(v=>{let b=Math.floor((v-mn)/step);if(b>=bins)b=bins-1;counts[b]++;});
+  const edges=Array.from({length:bins+1},(_,i)=>mn+i*step);
+  return {counts,edges,step,mn,mx};
+}
+
+function klDivergence(p,q) {
+  const eps=1e-10;
+  const ps=p.reduce((s,v)=>s+v,0)+eps, qs=q.reduce((s,v)=>s+v,0)+eps;
+  const pn=p.map(v=>(v+eps)/ps), qn=q.map(v=>(v+eps)/qs);
+  return pn.reduce((s,pi,i)=>s+pi*Math.log(pi/qn[i]),0);
+}
+
+function stateTransitions(ev) {
+  const trans={};
+  for(let i=1;i<ev.length;i++){const k=ev[i-1].state+'→'+ev[i].state;trans[k]=(trans[k]||0)+1;}
+  const totals={};
+  Object.entries(trans).forEach(([k,v])=>{const src=k.split('→')[0];totals[src]=(totals[src]||0)+v;});
+  const probs={};
+  Object.entries(trans).forEach(([k,v])=>{const src=k.split('→')[0];probs[k]=v/totals[src];});
+  return probs;
+}
+
+function transitionSimilarity(tA,tB) {
+  const keys=new Set([...Object.keys(tA),...Object.keys(tB)]);
+  if(!keys.size) return 1;
+  let diff=0; keys.forEach(k=>diff+=Math.abs((tA[k]||0)-(tB[k]||0)));
+  return Math.max(0,1-diff/keys.size);
+}
+
+function errorRate(ev) {
+  const e=ev.filter(e=>['ERROR','FATAL','CRITICAL','FAIL'].includes(e.level)).length;
+  return ev.length?e/ev.length:0;
+}
+
+function pearsonCorr(x,y) {
+  const n=Math.min(x.length,y.length); if(n<2) return 0;
+  const xm=x.slice(0,n).reduce((s,v)=>s+v,0)/n, ym=y.slice(0,n).reduce((s,v)=>s+v,0)/n;
+  let num=0,dx2=0,dy2=0;
+  for(let i=0;i<n;i++){const dxi=x[i]-xm,dyi=y[i]-ym;num+=dxi*dyi;dx2+=dxi*dxi;dy2+=dyi*dyi;}
+  return (dx2&&dy2)?num/Math.sqrt(dx2*dy2):0;
+}
+
+function freqBuckets(ev,buckets=20) {
+  if(!ev.length) return Array(buckets).fill(0);
+  const mn=ev[0].ts,mx=ev[ev.length-1].ts,step=(mx-mn)/buckets||1;
+  const counts=Array(buckets).fill(0);
+  ev.forEach(e=>{let b=Math.floor((e.ts-mn)/step);if(b>=buckets)b=buckets-1;counts[b]++;});
+  return counts;
+}
+
+// ── Main Analysis ──────────────────────────────────────────────────────────
+function analyze(evA,evB) {
+  const r = {};
+
+  // 1. Sequence (weight 0.20)
+  const seqA=evA.map(e=>e.level[0]), seqB=evB.map(e=>e.level[0]);
+  const ed=editDistance(seqA,seqB), maxLen=Math.max(seqA.length,seqB.length,1);
+  r.seq={score:Math.max(0,1-ed/maxLen), editDistance:ed, lenA:seqA.length, lenB:seqB.length,
+    emu:`len=${seqA.length}`, sim:`len=${seqB.length}`, note:`${ed} edits`};
+
+  // 2. Inter-event Δt (weight 0.15)
+  const dtA=interEventDeltas(evA), dtB=interEventDeltas(evB);
+  const hA=histogram(dtA,20), hB=histogram(dtB,20);
+  const kl_dt=klDivergence(hA.counts,hB.counts);
+  r.dt={score:Math.exp(-kl_dt), medA:percentile(dtA,50), medB:percentile(dtB,50), kl:kl_dt, hA, hB,
+    emu:`med=${percentile(dtA,50).toFixed(1)}ms`, sim:`med=${percentile(dtB,50).toFixed(1)}ms`, note:`KL=${kl_dt.toFixed(3)}`};
+
+  // 3. Latency (weight 0.15)
+  const latA=evA.filter(e=>e.latency!==null).map(e=>e.latency);
+  const latB=evB.filter(e=>e.latency!==null).map(e=>e.latency);
+  const pA={p50:percentile(latA,50),p95:percentile(latA,95),p99:percentile(latA,99)};
+  const pB={p50:percentile(latB,50),p95:percentile(latB,95),p99:percentile(latB,99)};
+  const latSim=latA.length&&latB.length
+    ?Math.max(0,1-Math.min(1,(Math.abs(pA.p50-pB.p50)/(pA.p50||1)*0.33+Math.abs(pA.p95-pB.p95)/(pA.p95||1)*0.33+Math.abs(pA.p99-pB.p99)/(pA.p99||1)*0.34)))
+    :0.5;
+  r.lat={score:latSim, pA, pB, cntA:latA.length, cntB:latB.length,
+    emu:`P50=${pA.p50.toFixed(1)} P95=${pA.p95.toFixed(1)}`, sim:`P50=${pB.p50.toFixed(1)} P95=${pB.p95.toFixed(1)}`, note:`${latA.length} samples`};
+
+  // 4. Frequency (weight 0.10)
+  const fA=freqBuckets(evA), fB=freqBuckets(evB);
+  const kl_freq=klDivergence(fA,fB);
+  const rateA=evA.length/((evA[evA.length-1]?.ts-evA[0]?.ts||1)/1000);
+  const rateB=evB.length/((evB[evB.length-1]?.ts-evB[0]?.ts||1)/1000);
+  r.freq={score:Math.exp(-kl_freq), fA, fB, kl:kl_freq, rateA, rateB,
+    emu:`${rateA.toFixed(2)} ev/s`, sim:`${rateB.toFixed(2)} ev/s`, note:`KL=${kl_freq.toFixed(3)}`};
+
+  // 5. State transitions (weight 0.15)
+  const tA=stateTransitions(evA), tB=stateTransitions(evB);
+  r.state={score:transitionSimilarity(tA,tB), tA, tB,
+    emu:`${Object.keys(tA).length} paths`, sim:`${Object.keys(tB).length} paths`, note:'Prob diff avg'};
+
+  // 6. Error rate (weight 0.10)
+  const erA=errorRate(evA), erB=errorRate(evB);
+  r.err={score:Math.max(0,1-Math.min(1,Math.abs(erA-erB))), rateA:erA, rateB:erB,
+    emu:`${(erA*100).toFixed(2)}%`, sim:`${(erB*100).toFixed(2)}%`, note:`Δ=${(Math.abs(erA-erB)*100).toFixed(2)}%`};
+
+  // 7. Correlation (weight 0.10)
+  const tsA=evA.filter(e=>e.latency!==null).map(e=>e.ts);
+  const tsB=evB.filter(e=>e.latency!==null).map(e=>e.ts);
+  const lA2=evA.filter(e=>e.latency!==null).map(e=>e.latency);
+  const lB2=evB.filter(e=>e.latency!==null).map(e=>e.latency);
+  const corrA=pearsonCorr(tsA,lA2), corrB=pearsonCorr(tsB,lB2);
+  r.corr={score:Math.max(0,1-Math.min(1,Math.abs(corrA-corrB))), corrA, corrB,
+    emu:`r=${corrA.toFixed(3)}`, sim:`r=${corrB.toFixed(3)}`, note:`Δ=${Math.abs(corrA-corrB).toFixed(3)}`};
+
+  // 8. KL Divergence (weight 0.05)
+  const hLA=histogram(latA.length?latA:[0],20), hLB=histogram(latB.length?latB:[0],20);
+  const kl_lat=klDivergence(hLA.counts,hLB.counts);
+  r.kl={score:Math.exp(-kl_lat), kl_lat, kl_dt, kl_freq,
+    emu:'—', sim:'—', note:`KL=${kl_lat.toFixed(4)}`};
+
+  // Weighted overall score
+  r.overall = METRIC_META.reduce((sum,{key})=>sum+WEIGHTS[key]*r[key].score, 0);
+
+  return r;
+}
+
+// ── Verdict ────────────────────────────────────────────────────────────────
+function verdict(score) {
+  if(score>=0.75) return {cls:'good',label:'SIMILAR'};
+  if(score>=0.5)  return {cls:'warn',label:'PARTIAL'};
+  return {cls:'bad',label:'DIVERGENT'};
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function render(r, evA, evB, textA, textB) {
+  $('results').style.display='block';
+
+  // Weight legend
+  $('weight-legend').innerHTML = METRIC_META.map(({key,label},i)=>`
+    <div class="weight-pill">
+      <div class="weight-dot" style="background:${PILL_COLORS[i]}"></div>
+      <span style="color:var(--text)">${label}</span>
+      <span class="weight-pct">${(WEIGHTS[key]*100).toFixed(0)}%</span>
+    </div>
+  `).join('');
+
+  // Overall
+  const pct=Math.round(r.overall*100);
+  $('overall-pct').textContent=pct+'%';
+  $('overall-label').textContent=`Overall: ${verdict(r.overall).label}`;
+
+  // Score cards
+  $('score-grid').innerHTML = METRIC_META.map(({key,label},i)=>{
+    const s=r[key].score, v=verdict(s);
+    return `<div class="score-card ${v.cls}">
+      <div class="sc-label">${label}</div>
+      <div class="sc-value">${Math.round(s*100)}%</div>
+      <div class="sc-weight">weight ${(WEIGHTS[key]*100).toFixed(0)}% · +${(WEIGHTS[key]*s*100).toFixed(1)}pts</div>
+      <div class="sc-verdict ${v.cls}">${v.label}</div>
+    </div>`;
+  }).join('');
+
+  if ($('chart-dt')) {
+    renderCharts(r, evA, evB);
+  }
+
+  // Table rows
+  let totalW=0, totalContrib=0;
+  $('metric-tbody').innerHTML = METRIC_META.map(({key,label},i)=>{
+    const s=r[key].score, w=WEIGHTS[key], contrib=w*s, v=verdict(s);
+    totalW+=w; totalContrib+=contrib;
+    const fill=s>=0.75?'var(--accent-a)':s>=0.5?'var(--accent-c)':'var(--accent-err)';
+    return `<tr>
+      <td style="color:var(--text);font-weight:600">
+        <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${PILL_COLORS[i]};margin-right:6px;vertical-align:middle"></span>
+        ${label}
+      </td>
+      <td style="color:var(--accent-a);font-weight:700">${(w*100).toFixed(0)}%</td>
+      <td style="color:var(--accent-a)">${r[key].emu}</td>
+      <td style="color:var(--accent-b)">${r[key].sim}</td>
+      <td style="font-weight:700">${Math.round(s*100)}%</td>
+      <td style="color:var(--accent-a);font-weight:700">+${(contrib*100).toFixed(2)}pts
+        <span style="color:var(--muted);font-size:9px"> / ${r[key].note}</span>
+      </td>
+      <td><span class="badge ${v.cls}">${v.label}</span></td>
+      <td><div class="progress-bar"><div class="progress-fill" style="width:${Math.round(s*100)}%;background:${fill}"></div></div></td>
+    </tr>`;
+  }).join('');
+
+  // Footer total row
+  $('metric-tfoot').innerHTML = `<tr style="border-top:2px solid var(--border)">
+    <td colspan="4" style="padding:10px 12px;font-family:'Syne',sans-serif;font-weight:700;font-size:12px">WEIGHTED TOTAL</td>
+    <td></td>
+    <td style="font-family:'Syne',sans-serif;font-weight:800;font-size:14px;color:var(--accent-a)">
+      ${Math.round(totalContrib*100)}%
+    </td>
+    <td colspan="2"><span class="badge ${verdict(totalContrib).cls}">${verdict(totalContrib).label}</span></td>
+  </tr>`;
+
+  // Previews
+  $('preview-a').innerHTML = textA.split('\n').slice(0,30).map(l=>`<div>${l||'&nbsp;'}</div>`).join('');
+  $('preview-b').innerHTML = textB.split('\n').slice(0,30).map(l=>`<div>${l||'&nbsp;'}</div>`).join('');
+}
+
+function renderCharts(r, evA, evB) {
+  destroyChart('dt');
+  const dtLabels=r.dt.hA.edges.slice(0,-1).map(v=>v.toFixed(0)+'ms');
+  charts['dt']=new Chart($('chart-dt'),{type:'line',data:{labels:dtLabels,datasets:[
+    {label:'Emulation',data:r.dt.hA.counts,borderColor:COLORS.emu,backgroundColor:COLORS.emuFill,tension:0.4,fill:true,pointRadius:0},
+    {label:'Simulation',data:r.dt.hB.counts,borderColor:COLORS.sim,backgroundColor:COLORS.simFill,tension:0.4,fill:true,pointRadius:0}
+  ]},options:{...chartDefaults}});
+
+  destroyChart('lat');
+  charts['lat']=new Chart($('chart-lat'),{type:'bar',data:{labels:['P50','P95','P99'],datasets:[
+    {label:'Emulation',data:[r.lat.pA.p50,r.lat.pA.p95,r.lat.pA.p99],backgroundColor:COLORS.emu},
+    {label:'Simulation',data:[r.lat.pB.p50,r.lat.pB.p95,r.lat.pB.p99],backgroundColor:COLORS.sim}
+  ]},options:{...chartDefaults}});
+
+  destroyChart('freq');
+  charts['freq']=new Chart($('chart-freq'),{type:'line',data:{labels:r.freq.fA.map((_,i)=>i),datasets:[
+    {label:'Emulation',data:r.freq.fA,borderColor:COLORS.emu,backgroundColor:COLORS.emuFill,tension:0.3,fill:true,pointRadius:0},
+    {label:'Simulation',data:r.freq.fB,borderColor:COLORS.sim,backgroundColor:COLORS.simFill,tension:0.3,fill:true,pointRadius:0}
+  ]},options:{...chartDefaults}});
+
+  destroyChart('state');
+  const allKeys=[...new Set([...Object.keys(r.state.tA),...Object.keys(r.state.tB)])].slice(0,10);
+  charts['state']=new Chart($('chart-state'),{type:'bar',data:{labels:allKeys,datasets:[
+    {label:'Emulation',data:allKeys.map(k=>r.state.tA[k]||0),backgroundColor:COLORS.emu},
+    {label:'Simulation',data:allKeys.map(k=>r.state.tB[k]||0),backgroundColor:COLORS.sim}
+  ]},options:{...chartDefaults,indexAxis:'y'}});
+
+  destroyChart('kl');
+  charts['kl']=new Chart($('chart-kl'),{type:'bar',data:{
+    labels:['Δt','Latency','Frequency'],
+    datasets:[{label:'KL Divergence',data:[r.kl.kl_dt,r.kl.kl_lat,r.kl.kl_freq],
+      backgroundColor:['rgba(0,245,196,0.7)','rgba(123,92,245,0.7)','rgba(245,166,35,0.7)']}]
+  },options:{...chartDefaults,plugins:{...chartDefaults.plugins,legend:{display:false}}}});
+
+  destroyChart('corr');
+  charts['corr']=new Chart($('chart-corr'),{type:'bar',data:{
+    labels:['Time vs Latency'],
+    datasets:[
+      {label:'Emulation',data:[r.corr.corrA],backgroundColor:COLORS.emu},
+      {label:'Simulation',data:[r.corr.corrB],backgroundColor:COLORS.sim}
+    ]
+  },options:{...chartDefaults,scales:{...chartDefaults.scales,y:{...chartDefaults.scales.y,min:-1,max:1}}}});
+}
+
+// ── File Handling ──────────────────────────────────────────────────────────
+let fileContents=[null,null];
+
+['a','b'].forEach((side,idx)=>{
+  const inp=$('file-'+side), zone=$('zone-'+side), name=$('name-'+side);
+  const load=(f)=>{
+    if(!f) return;
+    name.textContent=f.name; zone.classList.add('loaded');
+    const reader=new FileReader();
+    reader.onload=e=>{ fileContents[idx]=e.target.result; if(fileContents[0]&&fileContents[1]) $('analyze-btn').disabled=false; };
+    reader.readAsText(f);
+  };
+  inp.addEventListener('change',()=>load(inp.files[0]));
+  zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('drag-over');});
+  zone.addEventListener('dragleave',()=>zone.classList.remove('drag-over'));
+  zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('drag-over');load(e.dataTransfer.files[0]);});
+});
+
+$('analyze-btn').addEventListener('click',()=>{
+  if(!fileContents[0]||!fileContents[1]) return;
+  const evA=parseLog(fileContents[0]), evB=parseLog(fileContents[1]);
+  const r=analyze(evA,evB);
+  render(r,evA,evB,fileContents[0],fileContents[1]);
+});
+</script>
+</body>
+</html>
